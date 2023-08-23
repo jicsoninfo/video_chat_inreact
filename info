@@ -1,0 +1,35 @@
+create two folder client and server
+go to inside server folder
+run command npm init -y
+install socket io package
+run commnad npm i socket.io
+create index.js file for code
+add the command "start": "node index.js" in package.json file
+and start the server npm start
+
+go to inside client folder
+run command
+npx create-react-app . 
+this command create react app inside client folder
+run command npm start
+install some packeage
+npm i react-router-dom socket.io-client
+
+npm install react-player /
+
+
+…or create a new repository on the command line
+echo "# video_chat_inreact" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/jicsoninfo/video_chat_inreact.git
+git push -u origin main
+…or push an existing repository from the command line
+git remote add origin https://github.com/jicsoninfo/video_chat_inreact.git
+git branch -M main
+git push -u origin main
+…or import code from another repository
+You can initialize this repository with code from a Subversion, Mercurial, or TFS project.
+

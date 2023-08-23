@@ -1,0 +1,332 @@
+Building one to many video conference application
+
+Piyush Garg's photo
+Piyush Garg
+·
+May 21, 2021
+·
+5 min read
+
+PLAY THIS ARTICLE
+
+SPEED
+1X
+Hey there, in this article we would be building a one-to-many video-conferencing application. We would be using SFU architecture to implement this.
+
+To read more about webRTC architectures, visit Different WebRTC Architectures
+
+Note: This article is a part of the WebRTC Series, if you haven't read previous articles, please read them before this one.
+
+Let's begin
+
+Setting up the server
+Firstly, set up a basic express server.
+
+
+COPY
+const express = require('express');
+
+const app = express();
+
+app.use(express.json());
+app.use(express.static('./public'))
+
+app.listen(9000, () => console.log('Server started!!'))
+Install wrtc by running npm install wrtc and import the library.
+
+
+COPY
+const wrtc = require('wrtc');
+Now, start by creating a /broadcast route for the broadcaster.
+
+
+COPY
+app.post('/broadcast', async (req, res) => {
+    const { sdp } = req.body;
+    const peer = new wrtc.RTCPeerConnection();
+    peer.ontrack = (e) => handleTrackEvent(e, peer);
+    const desc = new wrtc.RTCSessionDescription(sdp)
+    await peer.setRemoteDescription(desc);
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    res.json({
+        sdp: peer.localDescription
+    })
+});
+
+COPY
+function handleTrackEvent(e, peer) {
+    console.log(e.streams[0])
+    senderStream = e.streams[0]; // create a global variable senderStream
+}
+This is the route where we would first create an offer on the client-side and then create a peer-to-peer connection with our server (just like we used to do with other clients in previous tutorials).
+
+and now, let's create a route for consumers where we would make a peer-to-peer connection with our clients and share the senderStream with them.
+
+
+COPY
+app.post('/consumer', async (req, res) => {
+    const { sdp } = req.body;
+    const peer = new wrtc.RTCPeerConnection();
+    const desc = new wrtc.RTCSessionDescription(sdp)
+    await peer.setRemoteDescription(desc);
+    senderStream.getTracks().forEach(track => peer.addTrack(track, senderStream));
+    const ans = await peer.createAnswer();
+    await peer.setLocalDescription(ans);
+    res.json({
+        sdp: peer.localDescription
+    })
+});
+Great. Now create two files in your public folder:
+
+broadcast.html - For the broadcaster
+consumer.html - For the consumer
+Broadcast
+Inside your broadcast.html you need to implement the following steps in sequence
+
+Get the user's media stream and set it to the video tag's srcObject.
+Create a peer object for the broadcaster.
+Create a local offer and send the offer to the /broadcast route.
+Finally add your media stream to the peer (backend server).
+
+COPY
+async function init() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById('my-video').srcObject = stream;
+    const peer = createPeer();
+    stream.getTracks().forEach(track => peer.addTrack(track, stream));
+}
+
+function createPeer() {
+    const peer = new RTCPeerConnection();
+    peer.onnegotiationneeded = () => handleonnegotiationneeded(peer);
+    return peer;
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+*/
+async function handleonnegotiationneeded(peer) {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    const payload = {
+        sdp: peer.localDescription
+    }
+    const response = await(await fetch('/broadcast', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    })).json();
+
+    peer.setRemoteDescription(new RTCSessionDescription(response.sdp));
+}
+
+init();
+Great!
+
+Consume
+Inside consume.html you have to do pretty much the same things, the only difference is that instead of sending streams, you have to listen on incoming streams.
+
+
+COPY
+async function init() {
+    const peer = createPeer();
+    peer.addTransceiver('video', { direction: 'recvonly' })
+}
+
+function createPeer() {
+    const peer = new RTCPeerConnection();
+    peer.ontrack = handleTrack;
+    peer.onnegotiationneeded = () => handleonnegotiationneeded(peer);
+    return peer;
+}
+
+async function handleTrack(ev) {
+    document.getElementById('remote').srcObject = ev.streams[0];
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+*/
+async function handleonnegotiationneeded(peer) {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    const payload = {
+        sdp: peer.localDescription
+    }
+    const response = await(await fetch('/consumer', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    })).json();
+
+    peer.setRemoteDescription(new RTCSessionDescription(response.sdp));
+}
+
+window.addEventListener('load', init);
+And that's it. It was that easy. Now start your server and open http://localhost:9000/broadcast.html and broadcast yourself. Then open several other tabs at http://localhost:9000/consume.html and you would be seeing the broadcaster's video.
+
+Complete code: Server.js
+
+
+COPY
+const express = require('express');
+const wrtc = require('wrtc');
+const app = express();
+
+let senderStream;;
+
+app.use(express.json());
+app.use(express.static('./public'))
+
+app.post('/broadcast', async (req, res) => {
+    const { sdp } = req.body;
+    const peer = new wrtc.RTCPeerConnection();
+    peer.ontrack = (e) => handleTrackEvent(e, peer);
+    const desc = new wrtc.RTCSessionDescription(sdp)
+    await peer.setRemoteDescription(desc);
+    const answer = await peer.createAnswer();
+    await peer.setLocalDescription(answer);
+    res.json({
+        sdp: peer.localDescription
+    })
+});
+
+app.post('/consumer', async (req, res) => {
+    const { sdp } = req.body;
+    const peer = new wrtc.RTCPeerConnection();
+    const desc = new wrtc.RTCSessionDescription(sdp)
+    await peer.setRemoteDescription(desc);
+    senderStream.getTracks().forEach(track => peer.addTrack(track, senderStream));
+    const ans = await peer.createAnswer();
+    await peer.setLocalDescription(ans);
+    res.json({
+        sdp: peer.localDescription
+    })
+});
+
+/**
+ * 
+ * @param {RTCTrackEvent} e 
+ * @param {RTCPeerConnection} peer 
+ */
+function handleTrackEvent(e, peer) {
+    console.log(e.streams[0])
+    senderStream = e.streams[0];
+}
+
+app.listen(9000)
+broadcast.html
+
+
+COPY
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <video id="my-video" autoplay></video>
+
+    <script>
+async function init() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    document.getElementById('my-video').srcObject = stream;
+    const peer = createPeer();
+    stream.getTracks().forEach(track => peer.addTrack(track, stream));
+}
+
+function createPeer() {
+    const peer = new RTCPeerConnection();
+    peer.onnegotiationneeded = () => handleonnegotiationneeded(peer);
+    return peer;
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+*/
+async function handleonnegotiationneeded(peer) {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    const payload = {
+        sdp: peer.localDescription
+    }
+    const response = await(await fetch('/broadcast', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    })).json();
+
+    peer.setRemoteDescription(new RTCSessionDescription(response.sdp));
+}
+
+init();
+
+    </script>
+</body>
+</html>
+consume.html
+
+
+COPY
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body> 
+    <video id="remote" autoplay></video>
+    <script>
+async function init() {
+    const peer = createPeer();
+    peer.addTransceiver('video', { direction: 'recvonly' })
+}
+
+function createPeer() {
+    const peer = new RTCPeerConnection();
+    peer.ontrack = handleTrack;
+    peer.onnegotiationneeded = () => handleonnegotiationneeded(peer);
+    return peer;
+}
+
+async function handleTrack(ev) {
+    document.getElementById('remote').srcObject = ev.streams[0];
+}
+
+/**
+ * @param {RTCPeerConnection} peer
+*/
+async function handleonnegotiationneeded(peer) {
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    const payload = {
+        sdp: peer.localDescription
+    }
+    const response = await(await fetch('/consumer', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    })).json();
+
+    peer.setRemoteDescription(new RTCSessionDescription(response.sdp));
+}
+
+window.addEventListener('load', init);
+
+    </script>
+</body>
+</html>
